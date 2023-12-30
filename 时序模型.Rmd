@@ -1,0 +1,214 @@
+---
+title: "时序模型"
+output: html_document
+date: "2023-12-18"
+---
+
+• Mission:
+该数据集共包含25161⾏，每⾏代表特定公司在给定⽇期的股市数据。数据是从www.nasdaq.com通过⽹络抓取收集的信息包括上市公司的股价和交易量，如苹果、星巴克、微软、思科系统、⾼通、Meta、亚⻢逊、特斯拉、Advanced Micro Devices和Netflix。请对这些公司的数据进⾏统计分析，希望您能够为投资者提出可靠并宝贵的建议。
+
+```{r step1}
+# 导入数据和预处理
+# 导入数据
+data <- read.csv("stock.csv")
+# 查看数据结构和列名
+str(data)
+colnames(data)
+# 缺失值检验及筛选有缺失值的行
+sum(is.na(data))
+data[!complete.cases(data)]
+#填充缺失值
+library(lubridate)
+data$Date <- mdy(data$Date)
+
+# 将非数值数据转换为数值量
+data$Close.Last <- as.numeric(gsub("[$]", "", data$Close.Last))
+data$Open <- as.numeric(gsub("[$]", "", data$Open))
+data$High <- as.numeric(gsub("[$]", "", data$High))
+data$Low <- as.numeric(gsub("[$]", "", data$Low))
+
+# 转换日期格式
+#data_filled$Date <- as.Date(data_filled$Date, format = "%m/%d/%Y") 
+
+# 根据 Company 列生成新的分类列
+library(dplyr)
+data <- data %>%
+  mutate(Plate = case_when(
+    Company %in% c("AAPL", "MSFT" , "CSCO" , "QCOM" , "META") ~ "Tech",
+    Company %in% c("SBUX", "AMZN") ~ "Serv",
+    Company %in% c("TSLA") ~ "Car",
+    Company %in% c("AMD") ~ "SC",
+    Company %in% c("NFLX") ~ "Media"
+  ))
+
+boxplot(Close.Last ~ Company, 
+        data = data, 
+        main = "各公司股票收盘价箱线图", 
+        xlab = "公司名", 
+        ylab = "收盘价")
+```
+```{r step2}
+
+library(plotly)
+library(dplyr)
+
+# 数据预处理
+data <- data %>%
+  arrange(Date) %>%
+  mutate_at(vars("Close.Last"), function(x) as.numeric(gsub("[$,]", "", x))) %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y"))
+
+# 绘制K线图
+# plot_ly(aapl_data, type = "candlestick",
+#               x = ~Date, 
+#               open = ~Open, 
+#               high = ~High, 
+#               low = ~Low, 
+#               close = ~`Close.Last`) %>%
+# layout(title = "AAPL K线图")
+
+# 颜色列表
+new_colors <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", 
+                "#D55E00", "#CC79A7", "#999999", "#E5A9DF", "#66CCFF")
+
+# 绘制折线图
+ggplot(data, aes(x = Date, y = `Close.Last`, color = Company)) +
+  geom_line() +
+  facet_wrap(~ Plate , ncol = 2) +
+  scale_color_manual(values = new_colors) +
+  labs(title = "各公司股价趋势", x = "日期", y = "最新交易价格")
+```
+
+```{r step 3}
+# 根据日期（Date）计算季度（Quarter）
+data$Quarter <- quarter(data$Date)
+
+# 统计各个季度的平均股票价格
+data_aggregated <- aggregate(`Close.Last` ~ Company + Quarter, data = filter(data, year(Date) < 2023), mean)
+
+# 绘制每个公司各季度的平均股票价格条形图
+ggplot(data_aggregated, aes(x = Quarter, y = `Close.Last`, fill = Quarter)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~ Company, ncol = 5) +
+  labs(title = "每个公司各季度的平均股票价格条形图", x = "季度", y = "平均股票价格")
+```
+
+```{r step 4}
+library(data.table)
+# 将数据转换为宽格式
+data_wide <- dcast(data, Date ~ Company, value.var = "Close.Last")
+
+# 绘制热图
+ggplot(data, aes(x = Company, y = Date, fill = Close.Last)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "各公司的股票价格热图", x = "公司", y = "时间", fill = "股票价格")
+
+ggplot(data, aes(x = Company, y = Date, fill = Volume)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "各公司的交易总数热图", x = "公司", y = "时间", fill = "股票价格")
+```
+
+```{r step 5}
+# 趋势分析
+# 根据公司进行分组，计算每个公司的每日股价均值
+trend_data <- data %>%
+  group_by(Date, Company) %>%
+  summarise(AvgPrice = mean(Close.Last), TotalVolume = sum(Volume), .groups = 'drop')
+
+# 绘制公司的交易量趋势曲线
+ggplot(trend_data, aes(x = Date, y = TotalVolume, color = Company)) +
+  geom_line() +
+  labs(title = "Trading Volume Trend", x = "Date", y = "Volume") +
+  facet_wrap(~ Company, ncol = 2)
+```
+
+```{r step 6}
+# 创建散点图
+# 创建最高价随季度变化的折线图
+ggplot(data, aes(x = Date, y = `High`), color = Company) +
+  geom_line() +
+  labs(title = "最高价随季度的变化", x = "季度", y = "最高价")
+
+# 创建最低价随季度变化的折线图
+ggplot(data, aes(x = Date, y = Low, color = Company)) +
+  geom_line() +
+  labs(title = "最低价随季度的变化", x = "季度", y = "最低价")+
+  facet_wrap(~ Company, ncol = 2)
+```
+
+```{r step 7}
+# 相关性分析
+# 透视数据，将每个公司的收盘价作为一个变量
+library(reshape2)
+stock_pivot <- dcast(data, Date ~ Company, value.var = "Close.Last")
+
+# 计算相关系数矩阵
+stock_corr <- cor(stock_pivot[-1])
+
+# 输出相关系数矩阵
+print(stock_corr)
+
+#install.packages("corrplot")
+
+# 加载corrplot库
+library(corrplot)
+
+# 绘制相关性矩阵的散点图
+corrplot(stock_corr, method = "circle",type = "lower")
+```
+
+```{r step 8}
+library(ggplot2)
+
+# 计算每家公司股价的波动性（标准差）
+stockVolatility <- aggregate(Close.Last ~ Company, data = data, sd)
+
+# 绘制股价波动性柱状图
+ggplot(stockVolatility, aes(x = Company, y = Close.Last)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "股价波动性", x = "公司", y = "标准差")
+
+# 绘制箱线图
+ggplot(data, aes(x = Company, y = Close.Last)) +
+  geom_boxplot(fill = "skyblue", color = "black") +
+  labs(title = "各公司股票波动性", x = "公司", y = "收盘价")
+
+# 推荐最佳潜力股
+# 这里简单使用涨幅作为衡量股票潜力的指标，您可以根据需要自定义指标
+data$Change <- (data$Close.Last - data$Open) / data$Open * 100
+
+# 绘制涨幅散点图和箱线图
+ggplot(data, aes(x = Company, y = Change)) +
+  geom_boxplot(fill = "black", color = "red") +
+  labs(title = "股票涨幅", x = "公司", y = "涨幅")
+
+# 根据公司分别绘制涨幅数据的密度图
+ggplot(data, aes(x = Change)) +
+  geom_density(fill = "blue", color = "black") +
+  facet_wrap(~ Company, nrow = 2) +
+  labs(title = "涨幅的概率密度分布", x = "涨幅", y = "概率密度")
+
+#split_data <- split(data, data$Company)
+
+# 循环计算每个子数据框的偏度和峰度
+#for (i in 1:length(split_data)) {
+#  company <- names(split_data)[i]  # 获取公司名称
+#  change <- split_data[[i]]$Change  # 获取变化数据
+  
+#  skew <- skewness(change)  # 计算偏度
+#  kurt <- kurtosis(change)  # 计算峰度
+  
+#  print(paste("公司:", company))
+#  print(paste("偏度:", skew))
+#  print(paste("峰度:", kurt))
+#}
+
+# 绘制每个公司的涨幅数据的QQ图
+#ggplot(data, aes(sample = Change)) +
+#  geom_qq() +  # 绘制QQ图
+#  stat_qq_line() +  # 添加拟合线
+#  facet_wrap(~ Company, nrow = 2) +  # 按照公司名称进行分面
+#  labs(title = "QQ Plot of Stock Returns", x = "Theoretical Quantiles", y = "Sample Quantiles")
+```
