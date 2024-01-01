@@ -46,6 +46,12 @@ boxplot(Close.Last ~ Company,
         main = "各公司股票收盘价箱线图", 
         xlab = "公司名", 
         ylab = "收盘价")
+
+# 构建线性回归模型
+model <- lm(Close.Last ~ Open + High + Low, data = data)
+
+# 分析拟合结果
+summary(model)
 ```
 ```{r step2}
 
@@ -155,7 +161,7 @@ print(stock_corr)
 # 加载corrplot库
 library(corrplot)
 
-# 绘制相关性矩阵的散点图
+# 绘制相关性矩阵的图
 corrplot(stock_corr, method = "circle",type = "lower")
 ```
 
